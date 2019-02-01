@@ -1,197 +1,95 @@
 <?php
 
 namespace App\Http\Controllers;
-
-use App\Professional;
 use App\User;
-use Illuminate\Database\Eloquent\ModelNotFoundException;
-use Illuminate\Database\QueryException;
 use Illuminate\Http\Request;
-use Illuminate\Support\Facades\DB;
-use Illuminate\Support\Facades\Hash;
-
+use Yajra\Datatables\Datatables;
+use Illuminate\Support\Facades\Storage;
 class UserController extends Controller
 {
-    public function login(Request $request)
+    public function showPage()
     {
-        try {
-            $data = $request->json()->all();
-            $dataUser = $data['user'];
-            $user = User::where('user_name', $dataUser['user_name'])
-                ->orWhere('email', $dataUser['user_name'])
-                ->join("role_user", "role_user.user_id", "=", "users.id")
-                ->join("roles", "roles.id", "=", "role_user.role_id")
-                ->select('users.id', 'users.name', 'users.avatar', 'users.user_name', 'users.email', 'users.password', 'users.api_token',
-                    'roles.role')
-                ->first();
-            if ($user && Hash::check($dataUser['password'], $user->password)) {
-                return response()->json($user, 200);
-            } else {
-                return response()->json([], 401);
+        return view('menus.usuarios');
+    }
+
+    public function listAll()
+    {
+        return Datatables::of(User::select('id','nombre','apellidos',
+        'direccion','email')->get())->make(true);
+    }
+
+    
+    public function setSession(Request $request)
+    {
+         $request->session()->put('idUsuario',$request->id);
+         return response()->json(["Sesion"=>"Asignado"]);
+    }
+
+
+    public function save(Request $request)
+    {
+        if ($request->ajax()) {
+            if ($request->Accion == "Registrar") {
+				$user            = new User;
+				$user->nombre    = $request->Nombre;
+				$user->apellidos = $request->Apellidos;
+				$user->direccion = $request->Direccion;
+				$user->email     = $request->Email;
+				$user->password  = bcrypt($request->Password);
+                $user->foto = 'img/default-user.png';
+                if($user->save())
+                    return response()->json(["Estado"=>"Registrado"]);
+                else
+                    return response()->json(["Estado"=>"Error"]);    
+            }else if($request->Accion == "Editar"){
+                $user            = User::find($request->session()->get('idUsuario'));
+               	$user->nombre    = $request->Nombre;
+                $user->apellidos = $request->Apellidos;
+				$user->direccion = $request->Direccion;
+				$user->email     = $request->Email;
+				if($request->Password != "")
+				$user->password  = bcrypt($request->Password);
+
+                if($user->save())
+                    return response()->json(["Estado"=>"Editado"]);
+                else
+                    return response()->json(["Estado"=>"Error"]);    
+            } 
+            $request->session()->forget('idUsuario');
+        }else
+            return response()->json(["Estado"=>"Error"]);
+    }
+
+    /**
+     * Remove the specified resource from storage.
+     *
+     * @param  \App\Period  $period
+     * @return \Illuminate\Http\Response
+     */
+    public function delete(Request $request)
+    {
+        $user = User::find($request->id);
+        if (!is_null($user)) {
+            $user->delete();
+            return response()->json(["Estado"=>"Eliminado"]);
+        }
+            return response()->json(["Estado"=>"Error"]);
+    }
+
+    public function subirFoto(Request $request)
+    {
+        $user = User::find($request->session()->get('idUsuario'));
+        if (!is_null($user)) {
+            $request->file('file')->store('public/usuarios/'.$request->session()->get('idUsuario'));
+            
+            $ruta = $request->file('file')->store('storage/usuarios/'.$request->session()->get('idUsuario'));
+            $user->foto = $ruta;
+            if ($user->save()){
+                return response()->json(["Estado"=>"Subido"]);
             }
-        } catch (NotFoundHttpException  $e) {
-            return response()->json('NotFoundHttp', 405);
-        } catch (QueryException $e) {
-            return response()->json($e, 500);
-        } catch (Exception $e) {
-            return response()->json('Exception', 500);
-        } catch (Error $e) {
-            return response()->json('Error', 500);
+        }else{
+            return response()->json(["Estado"=>"Error"]);
         }
-    }
-
-    function logout(Request $request)
-    {
-        $data = $request->json()->all();
-        $dataUser = $data['user'];
-        try {
-            User::where('user_name', $dataUser['user_name'])->update(['api_token' => str_random(60),]);
-            return response()->json([], 201);
-        } catch (ModelNotFoundException $e) {
-            return response()->json($e, 405);
-        } catch (NotFoundHttpException  $e) {
-            return response()->json($e, 405);
-        } catch (QueryException  $e) {
-            return response()->json($e, 405);
-        } catch (Exception $e) {
-            return response()->json('Exception', 500);
-        } catch (Error $e) {
-            return response()->json('Error', 500);
-        }
-
-    }
-
-    function getAllUsers(Request $request)
-    {
-        try {
-            $users = User::orderby($request->field, $request->order)->paginate($request->limit);
-            return response()->json($users, 200);
-        } catch (ModelNotFoundException $e) {
-            return response()->json($e, 405);
-        } catch (NotFoundHttpException  $e) {
-            return response()->json($e, 405);
-        } catch (QueryException $e) {
-            return response()->json($e, 409);
-        } catch (\PDOException $e) {
-            return response()->json($e, 409);
-        } catch (Exception $e) {
-            return response()->json($e, 500);
-        } catch (Error $e) {
-            return response()->json($e, 500);
-        }
-    }
-
-    function showUser($id)
-    {
-        try {
-            $user = User::findOrFail($id);
-            return response()->json(['user' => $user], 200);
-        } catch (ModelNotFoundException $e) {
-            return response()->json($e, 405);
-        } catch (NotFoundHttpException  $e) {
-            return response()->json($e, 405);
-        } catch (QueryException $e) {
-            return response()->json($e, 409);
-        } catch (\PDOException $e) {
-            return response()->json($e, 409);
-        } catch (Exception $e) {
-            return response()->json($e, 500);
-        } catch (Error $e) {
-            return response()->json($e, 500);
-        }
-
-    }
-
-    function createUser(Request $request)
-    {
-        try {
-            $data = $request->json()->all();
-            $dataUser = $data['user'];
-            $dataProfessional = $data['professional'];
-            DB::beginTransaction();
-            $user = User::create([
-                'name' => strtoupper($dataUser['name']),
-                'user_name' => $dataUser['user_name'],
-                'email' => $dataUser['email'],
-                'password' => Hash::make($dataUser['password']),
-                'api_token' => str_random(60),
-            ]);
-            $user->professional()->create([
-                'identity' => $dataProfessional['identity'],
-                'first_name' => strtoupper($dataProfessional['first_name']),
-                'last_name' => strtoupper($dataProfessional['last_name']),
-                'email' => strtolower($dataProfessional['email']),
-                'nationality' => strtoupper($dataProfessional['nationality']),
-                'civil_state' => strtoupper($dataProfessional['civil_state']),
-                'birthdate' => $dataProfessional['birthdate'],
-                'gender' => strtoupper($dataProfessional['gender']),
-                'phone' => $dataProfessional['phone'],
-                'address' => strtoupper($dataProfessional['address']),
-                'about_me' => strtoupper($dataProfessional['about_me']),
-            ]);
-            $user->roles()->attach(1);
-            DB::commit();
-            return response()->json(['user' => $user], 201);
-        } catch (ModelNotFoundException $e) {
-            return response()->json($e, 405);
-        } catch (NotFoundHttpException  $e) {
-            return response()->json($e, 405);
-        } catch (QueryException $e) {
-            return response()->json($e, 409);
-        } catch (\PDOException $e) {
-            return response()->json($e, 409);
-        } catch (Exception $e) {
-            return response()->json($e, 500);
-        } catch (Error $e) {
-            return response()->json($e, 500);
-        }
-    }
-
-    function updateUser(Request $request)
-    {
-        try {
-            $data = $request->json()->all();
-            $dataUser = $data['user'];
-            $user = User::findOrFail($dataUser['id'])->update([
-                'name' => strtoupper($dataUser['name']),
-                'user_name' => $dataUser['user_name'],
-                'email' => strtolower($dataUser['email']),
-                'password' => Hash::make($dataUser['password']),
-                'api_token' => str_random(60),
-            ]);
-            return response()->json($user, 201);
-        } catch (ModelNotFoundException $e) {
-            return response()->json($e, 405);
-        } catch (NotFoundHttpException  $e) {
-            return response()->json($e, 405);
-        } catch (QueryException $e) {
-            return response()->json($e, 409);
-        } catch (\PDOException $e) {
-            return response()->json($e, 409);
-        } catch (Exception $e) {
-            return response()->json($e, 500);
-        } catch (Error $e) {
-            return response()->json($e, 500);
-        }
-    }
-
-    function deleteUser(Request $request)
-    {
-        try {
-            $user = User::findOrFail($request->id)->delete();
-            return response()->json($user, 201);
-        } catch (ModelNotFoundException $e) {
-            return response()->json($e, 405);
-        } catch (NotFoundHttpException  $e) {
-            return response()->json($e, 405);
-        } catch (QueryException $e) {
-            return response()->json($e, 409);
-        } catch (\PDOException $e) {
-            return response()->json($e, 409);
-        } catch (Exception $e) {
-            return response()->json($e, 500);
-        } catch (Error $e) {
-            return response()->json($e, 500);
-        }
+        $request->session()->forget('idUsuario');    
     }
 }
